@@ -2,6 +2,7 @@ package etrace
 
 import (
 	"errors"
+	"fmt"
 )
 
 /*
