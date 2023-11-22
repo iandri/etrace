@@ -1,4 +1,4 @@
-package stacktrace
+package etrace
 
 import (
 	"errors"

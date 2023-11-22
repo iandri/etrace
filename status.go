@@ -1,4 +1,4 @@
-package stacktrace
+package etrace
 
 type StatusCode int
 
