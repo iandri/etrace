@@ -1,4 +1,4 @@
-package etrace
+package stacktrace
 
 import (
 	"os"

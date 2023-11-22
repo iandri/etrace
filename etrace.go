@@ -1,4 +1,18 @@
-package etrace
+// Copyright 2016 Palantir Technologies
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package stacktrace
 
 import (
 	"fmt"
@@ -6,7 +20,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/pkg/errors"
+	"errors"
 )
 
 /*
@@ -34,23 +48,31 @@ information. The canonical call looks like this:
 */
 func NewError(msg string, vals ...interface{}) error {
 	e := fmt.Errorf(msg, vals...)
-	return create(e, NoCode, "")
+	return create(e, NoCode, NoStatusCode, "")
 }
 
-func Chain(cause error) error {
+func Wrap(cause error) error {
 	if cause == nil {
 		// Allow calling Propagate without checking whether there is error
 		return nil
 	}
-	return create(cause, NoCode, "")
+	return create(cause, NoCode, NoStatusCode, "")
 }
 
-func ChainWithCode(code ErrorCode, cause error) error {
+func WrapWithCode(code ErrorCode, cause error) error {
 	if cause == nil {
 		// Allow calling PropagateWithCode without checking whether there is error
 		return nil
 	}
-	return create(cause, code, "")
+	return create(cause, code, NoStatusCode, "")
+}
+
+func WrapWithStatusCode(code int, cause error) error {
+	if cause == nil {
+		// Allow calling PropagateWithCode without checking whether there is error
+		return nil
+	}
+	return create(cause, NoCode, code, "")
 }
 
 /*
@@ -89,7 +111,23 @@ func Propagate(cause error, msg string, vals ...interface{}) error {
 		// Allow calling Propagate without checking whether there is error
 		return nil
 	}
-	return create(cause, NoCode, msg, vals...)
+	return create(cause, NoCode, NoStatusCode, msg, vals...)
+}
+
+func PropagateWithCode(cause error, code ErrorCode, msg string, vals ...interface{}) error {
+	if cause == nil {
+		// Allow calling PropagateWithCode without checking whether there is error
+		return nil
+	}
+	return create(cause, code, NoStatusCode, msg, vals...)
+}
+
+func PropagateWithStatusCode(cause error, code int, msg string, vals ...interface{}) error {
+	if cause == nil {
+		// Allow calling PropagateWithCode without checking whether there is error
+		return nil
+	}
+	return create(cause, NoCode, code, msg, vals...)
 }
 
 /*
@@ -111,6 +149,7 @@ Avoid using that value as an error code.
 An ordinary stacktrace.Propagate call preserves the error code of an error.
 */
 type ErrorCode uint16
+type ErrorStatusCode int
 
 /*
 NoCode is the error code of errors with no code explicitly attached.
@@ -122,7 +161,12 @@ NewErrorWithCode is similar to NewError but also attaches an error code.
 */
 func NewErrorWithCode(code ErrorCode, msg string, vals ...interface{}) error {
 	e := fmt.Errorf(msg, vals...)
-	return create(e, code, "")
+	return create(e, code, NoStatusCode, "")
+}
+
+func NewErrorWithStatusCode(statusCode int, msg string, vals ...interface{}) error {
+	e := fmt.Errorf(msg, vals...)
+	return create(e, NoCode, statusCode, "")
 }
 
 /*
@@ -133,13 +177,6 @@ PropagateWithCode is similar to Propagate but also attaches an error code.
 		return stacktrace.PropagateWithCode(err, EcodeManifestNotFound, "")
 	}
 */
-func PropagateWithCode(cause error, code ErrorCode, msg string, vals ...interface{}) error {
-	if cause == nil {
-		// Allow calling PropagateWithCode without checking whether there is error
-		return nil
-	}
-	return create(cause, code, msg, vals...)
-}
 
 /*
 NewMessageWithCode returns an error that prints just like fmt.Errorf with no
@@ -155,6 +192,13 @@ func NewMessageWithCode(code ErrorCode, msg string, vals ...interface{}) error {
 	return &Stacktrace{
 		message: fmt.Sprintf(msg, vals...),
 		code:    code,
+	}
+}
+
+func NewMessageWithStatusCode(code int, msg string, vals ...interface{}) error {
+	return &Stacktrace{
+		message:    fmt.Sprintf(msg, vals...),
+		statusCode: code,
 	}
 }
 
@@ -182,25 +226,46 @@ func GetCode(err error) ErrorCode {
 	return NoCode
 }
 
+func GetStatusCode(err error) int {
+	var trace *Stacktrace
+	if errors.As(err, &trace) {
+		return trace.statusCode
+	}
+
+	return NoStatusCode
+}
+
 type Stacktrace struct {
-	message  string
-	cause    error
-	code     ErrorCode
+	message    string
+	cause      error
+	code       ErrorCode
+	statusCode int
+	//statusCode ErrorStatusCode
 	file     string
 	function string
 	line     int
 }
 
-func create(cause error, code ErrorCode, msg string, vals ...interface{}) error {
+func create(cause error, code ErrorCode, statusCode int, msg string, vals ...interface{}) error {
 	// If no error code specified, inherit error code from the cause.
 	if code == NoCode {
 		code = GetCode(cause)
 	}
 
+	if statusCode == NoStatusCode {
+		statusCode = GetStatusCode(cause)
+	}
+
+	//if statusCode == StatusBadGateway || statusCode == 0 {
+	//	statusCode = GetStatusCode(cause)
+	//}
+
 	err := &Stacktrace{
-		message: fmt.Sprintf(msg, vals...),
-		cause:   cause,
-		code:    code,
+		message:    fmt.Sprintf(msg, vals...),
+		cause:      cause,
+		code:       code,
+		statusCode: statusCode,
+		//statusCode: statusCode,
 	}
 
 	// Caller of create is NewError or Propagate, so user's code is 2 up.
