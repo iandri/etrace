@@ -94,7 +94,10 @@ nil" checks.
 */
 func Propagate(cause error, msg string, vals ...interface{}) error {
 	if cause == nil {
-		return NewError(msg, vals...)
+		e := fmt.Errorf(msg, vals...)
+		// return create(e, NoCode, NoStatusCode, "")
+		// Allow calling Propagate without checking whether there is error
+		return nil
 	}
 	return create(cause, NoCode, NoStatusCode, msg, vals...)
 }
@@ -102,7 +105,7 @@ func Propagate(cause error, msg string, vals ...interface{}) error {
 func PropagateWithCode(cause error, code ErrorCode, msg string, vals ...interface{}) error {
 	if cause == nil {
 		// Allow calling PropagateWithCode without checking whether there is error
-		return NewErrorWithCode(code, msg, vals...)
+		return nil
 	}
 	return create(cause, code, NoStatusCode, msg, vals...)
 }
